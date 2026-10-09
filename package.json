@@ -1,0 +1,8 @@
+{
+  "name": "vaxiquest",
+  "version": "1.0.0",
+  "description": "VaxiQuest - Gamified Immunization Ecosystem",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "reseed": "node server.js --reseed" },
+  "dependencies": { "express": "^4.19.2" }
+}

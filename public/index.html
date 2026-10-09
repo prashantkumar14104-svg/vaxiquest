@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VaxiQuest</title>
+<style>
+:root{--g:#0f9d75;--gd:#0b7a5b;--bg:#f2f7f5;--c:#fff;--t:#17302a;--m:#5f7a72;--r:#e5484d;--y:#f5a524;--b:#dbe8e3}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a17;--c:#182622;--t:#e6f2ee;--m:#93b0a6;--b:#28403a}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--t);font-size:16px}
+header{background:var(--g);color:#fff;padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}header h1{font-size:18px;margin:0;flex:1}
+main{max-width:1000px;margin:0 auto;padding:14px}.card{background:var(--c);border:1px solid var(--b);border-radius:14px;padding:16px;margin-bottom:14px}
+h2{margin:0 0 8px;font-size:19px}h3{margin:12px 0 6px;font-size:16px}small,.m{color:var(--m);font-weight:400;font-size:13px}
+button,select,input{font:inherit;padding:10px 14px;border-radius:10px;border:1px solid var(--b);background:var(--c);color:var(--t)}
+button{background:var(--g);color:#fff;border:0;cursor:pointer;font-weight:600}button.sec{background:transparent;color:var(--g);border:1px solid var(--g)}button.hd{background:rgba(255,255,255,.2)}button.sm{padding:6px 10px;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.stat{background:var(--bg);border-radius:12px;padding:12px;text-align:center}.stat b{display:block;font-size:26px}
+.bar{height:16px;background:var(--b);border-radius:9px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--g)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{padding:6px 10px;border-radius:20px;font-size:13px;background:var(--bg);border:1px solid var(--b)}
+.done{background:#d6f5e9;color:#0a5c43;border-color:#8fdcc0}.missed{background:#fde0e0;color:#a11;border-color:#f3a3a3}.due_soon{background:#fff0d1;color:#8a5a00;border-color:#f5cf85}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--b);flex-wrap:wrap}.row:last-child{border:0}
+.warn{background:#fff6dd;color:#5b4300}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px;border-bottom:1px solid var(--b);text-align:left}
+.badge{display:inline-block;padding:6px 10px;border-radius:10px;background:var(--bg);margin:3px;font-size:14px;border:1px solid var(--b)}.badge.on{background:#fff2b8;color:#5b4300;border-color:#e5c84a}.badge.off{opacity:.45}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:10px;z-index:9}
+.login{max-width:420px;margin:30px auto}.login input,.login select{width:100%;margin:6px 0}.roles{display:grid;grid-template-columns:1fr 1fr;gap:8px}.roles button{background:var(--bg);color:var(--t);border:2px solid var(--b)}.roles button.on{border-color:var(--g);background:#d6f5e9;color:#0a5c43}
+.big button{padding:14px 18px;font-size:17px}.col{display:flex;gap:4px;align-items:flex-end;height:110px}.col div{flex:1;background:var(--g);border-radius:6px 6px 0 0;color:#fff;font-size:11px;text-align:center}
+#cardp{border:2px dashed var(--g)}@media print{header,.noprint,.card:not(#cardp){display:none!important}}
+</style></head><body><div id="app"></div>
+<script>
+const tr={en:{complete:'complete',next:'Next vaccine',book:'Book / Visit Centre',points:'Points',level:'Level',badges:'Badges',quiz:'Knowledge Quiz',notes:'Notifications',logout:'Logout',card:'Vaccination Card',record:'Record',tasks:"Today's Tasks",progress:'Vaccination Progress'},
+hi:{complete:'पूर्ण',next:'अगला टीका',book:'अपॉइंटमेंट बुक करें',points:'अंक',level:'स्तर',badges:'बैज',quiz:'प्रश्नोत्तरी',notes:'सूचनाएं',logout:'लॉगआउट',card:'टीकाकरण कार्ड',record:'दर्ज करें',tasks:'आज के कार्य',progress:'टीकाकरण प्रगति'}};
+let LANG=localStorage.vq_lang||'en',TOKEN=localStorage.vq_token||'',ME=null,cur=0,WD=null,roleSel='parent';
+const t=k=>(tr[LANG]||{})[k]||tr.en[k]||k,$=s=>document.querySelector(s),app=$('#app');
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ROLES={parent:'👨‍👩‍👧 Parent/Caregiver',worker:'🩺 Healthcare Worker',manager:'📊 Program Manager',admin:'⚙️ Administrator'};
+async function api(p,body){const r=await fetch('/api'+p,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','x-token':TOKEN},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));if(r.status===401&&TOKEN){logout(true);throw new Error('Session expired')}if(!r.ok)throw new Error(j.error||'Error');return j}
+function toast(m){const e=document.createElement('div');e.className='toast';e.textContent=m;document.body.append(e);setTimeout(()=>e.remove(),2800)}
+const run=async(f)=>{try{await f()}catch(e){toast(e.message)}};
+function speak(txt){if(!window.speechSynthesis)return toast('Voice not supported');const u=new SpeechSynthesisUtterance(txt);u.lang=LANG==='hi'?'hi-IN':'en-IN';speechSynthesis.cancel();speechSynthesis.speak(u)}
+function shell(h){return `<header><h1>💉 VaxiQuest <small style="color:#dff">${ROLES[ME.role]} · ${esc(ME.name)}</small></h1><button class="hd" onclick="setLang()">${LANG==='en'?'हिंदी':'English'}</button><button class="hd" onclick="editMe()">👤 Profile</button><button class="hd" onclick="chPw()">🔑 Password</button><button class="hd" onclick="logout()">${t('logout')}</button></header><main>${h}</main>`}
+function setLang(){LANG=LANG==='en'?'hi':'en';localStorage.vq_lang=LANG;route()}
+function logout(q){if(TOKEN&&!q)api('/logout',{}).catch(()=>{});TOKEN='';localStorage.removeItem('vq_token');ME=null;login()}
+const risk={green:'🟢 On Track',yellow:'🟡 Due Soon',red:'🔴 Follow-up Required'};
+
+// ---------- login ----------
+function login(){app.innerHTML=`<div class="login card big"><h2>💉 VaxiQuest</h2><p class="m">One Platform, Multiple Roles, Common Goal: Complete Immunization</p>
+<div class="roles">${Object.entries(ROLES).map(([k,v])=>`<button class="${k===roleSel?'on':''}" onclick="roleSel='${k}';login()">${v}</button>`).join('')}</div>
+<input id="lid" placeholder="Mobile number / ID" inputmode="numeric"><input id="lpw" type="password" placeholder="Password"><button style="width:100%" onclick="doLogin()">Login</button>
+<p class="m" style="text-align:center">— or use OTP —</p><div style="display:flex;gap:6px"><button class="sec" onclick="sendOtp()">Send OTP</button><input id="lotp" placeholder="6-digit OTP" inputmode="numeric"></div><button class="sec" style="width:100%;margin-top:6px" onclick="doLogin(1)">Login with OTP</button>
+<p class="m">Demo: parent 9000000001/parent123 · worker 9000000101/worker123 · manager 9000000201/manager123 · admin 9000000301/admin123</p></div>`}
+const doLogin=(otp)=>run(async()=>{const j=await api('/login',{id:$('#lid').value.trim(),password:otp?'':$('#lpw').value,otp:otp?$('#lotp').value.trim():'',role:roleSel});TOKEN=j.token;localStorage.vq_token=TOKEN;ME=j.user;route()});
+const sendOtp=()=>run(async()=>{const j=await api('/otp',{id:$('#lid').value.trim()});$('#lotp').value=j.demoOtp;toast('Demo OTP: '+j.demoOtp)});
+function route(){if(!ME)return;({parent:vParent,worker:vWorker,manager:vManager,admin:vAdmin})[ME.role]().catch(e=>toast(e.message))}
+
+// ---------- parent ----------
+async function vParent(){const d=await api('/parent'),ks=d.children;if(cur>=ks.length)cur=0;const c=ks[cur],u=d.user,nx=c.next;
+const lvl={Bronze:'🥉',Silver:'🥈',Gold:'🥇',Platinum:'💎'}[u.level];
+const speakTxt=nx?(LANG==='hi'?`${c.name} का अगला टीका ${nx.name}, ${nx.due} को है।`:`${c.name}'s next vaccine is ${nx.name} on ${nx.due}.`):'All vaccines are up to date';
+window._speak=speakTxt;window._pd=d;
+app.innerHTML=shell(`${!u.consent?`<div class="card warn">🔒 We collect only the minimum data needed for immunization. Do you consent to its use for reminders and tracking? <button class="sm" onclick="run(async()=>{await api('/consent',{});vParent()})">I agree</button></div>`:''}
+${ks.length>1?`<select onchange="cur=this.value;vParent()">${ks.map((k,i)=>`<option value="${i}" ${i==cur?'selected':''}>${esc(k.name)}</option>`).join('')}</select>`:''}
+<div class="card"><h2>${esc(c.name)} <small>${c.id} · ${c.ageMonths} months · DOB ${c.dob}</small></h2><b>${t('progress')}: ${c.progress}% ${t('complete')}</b> <span class="m">🔥 Streak: ${c.streak}</span>
+<div class="bar"><i style="width:${c.progress}%"></i></div>
+<div class="chips">${c.vaccines.map(v=>`<span class="chip ${v.status}">${v.done?'✓':v.status==='missed'?'✗':'○'} ${v.name} <small>${v.done||v.due}</small></span>`).join('')}</div>
+<h3>${t('next')}</h3>${nx?`<div class="row"><span><b>💉 ${nx.name}</b> — ${nx.due} (${nx.days===0?'today':nx.days+' days'})</span></div>`:'<p>🎉 No upcoming vaccines</p>'}
+${c.missedCount?`<p style="color:var(--r)">⚠️ Missed: ${c.vaccines.filter(v=>v.status==='missed').map(v=>v.name).join(', ')}</p>`:''}
+<div class="big" style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="bookAppt('${c.id}')">📅 ${t('book')}</button><button class="sec" onclick="speak(window._speak)">🔊 Voice</button><button class="sec" onclick="showCard()">🪪 ${t('card')}</button></div>
+<p class="m">🏥 Centre: PHC ${c.area} · Open 9 AM – 4 PM ${d.appts.filter(a=>a.childId===c.id).map(a=>` · 📅 Booked ${a.vaccine} on ${a.date}`).join('')}</p></div>
+<div class="grid"><div class="stat">${lvl}<b>${u.level}</b>${t('level')}</div><div class="stat"><b>${u.points}</b>${t('points')}</div><div class="stat"><b>🔥 ${u.streak}</b>Streak</div><div class="stat"><b>${u.quizzes}</b>Quizzes</div></div><br>
+<div class="card"><h2>🏅 ${t('badges')}</h2>${u.badges.map(b=>`<span class="badge ${b.earned?'on':'off'}" title="${b.criteria}">${b.earned?'🏆':'🔒'} ${b.name}</span>`).join('')}
+<h3>🎯 Challenges</h3><div class="row"><span>Weekly: complete all due activities this week</span><b>+200 XP</b></div><div class="row"><span>Family: complete child's vaccination record</span><b>Badge</b></div>
+<p class="m">Points: profile ${d.config.profile} · vaccine ${d.config.done} · on-time +${d.config.ontime} · reminder ${d.config.ack} · quiz ${d.config.quiz} · appointment ${d.config.book}</p></div>
+<div class="card"><h2>🧠 ${t('quiz')}</h2>${d.quiz?`<p><b>${esc(d.quiz.q)}</b></p>${d.quiz.o.map((o,i)=>`<button class="sec" style="margin:3px" onclick="answerQuiz(${d.quiz.id},${i})">${esc(o)}</button>`).join('')}`:'<p>✅ All quizzes complete!</p>'}</div>
+<div class="card"><h2>🔔 ${t('notes')}</h2>${d.notifications.map(n=>`<div class="row">${esc(n)}</div>`).join('')||'<p class="m">None</p>'}<button class="sm" onclick="ackRem()">✔ Acknowledge reminders (+${d.config.ack})</button>
+<h3>For non-smartphone users</h3><div class="row"><span>📱 SMS: ${esc(d.sms)}</span></div><div class="row"><span>📞 IVR: ${esc(d.ivr)}</span><button class="sm sec" onclick="speak(_pd.ivr)">▶ Play</button></div></div>
+<div class="card" id="cardp" style="display:none"></div>`)}
+const bookAppt=id=>run(async()=>{const d=prompt('Appointment date (YYYY-MM-DD)',new Date(Date.now()+864e5).toISOString().slice(0,10));if(!d)return;await api('/parent/book',{childId:id,date:d});toast('📅 Appointment booked (+points)');vParent()});
+const answerQuiz=(id,a)=>run(async()=>{const j=await api('/parent/quiz',{id,answer:a});toast(j.correct?`✅ Correct! +${j.points} points`:'❌ Not quite, try again');vParent()});
+const ackRem=()=>run(async()=>{const j=await api('/parent/ack',{});toast(j.earned?`+${j.earned} points`:'Already acknowledged today');vParent()});
+function showCard(){const c=_pd.children[cur],e=$('#cardp');e.style.display='block';e.innerHTML=`<h2>💉 Vaccination Card</h2><p><b>${esc(c.name)}</b> · DOB ${c.dob} · Child ID: <b>${c.id}</b> · [QR: ${c.id}]</p><table><tr><th>Vaccine</th><th>Due</th><th>Given</th></tr>${c.vaccines.map(v=>`<tr><td>${v.name}</td><td>${v.due}</td><td>${v.done?'☑ '+v.done:'☐'}</td></tr>`).join('')}</table><button class="noprint" onclick="window.print()">🖨 Print card</button>`;e.scrollIntoView()}
+
+const VACS=['BCG','OPV-1','Penta-1','OPV-2','Penta-2','PCV-1','OPV-3','Penta-3','PCV-2','MR-1','JE-1','Vitamin A-1','MMR-1'];
+function regCard(areas){return `<details class="card"><summary><b>➕ Register new child / parent</b></summary><div class="grid" style="margin-top:10px"><input id="rc" placeholder="Child name"><label class="m">Date of birth<input id="rd" type="date" max="${new Date().toISOString().slice(0,10)}" style="width:100%"></label><label class="m">Area<select id="ra" style="width:100%">${areas.map(a=>`<option>${a}</option>`).join('')}</select></label><input id="rp" placeholder="Parent name"><input id="rm" placeholder="Parent mobile (10 digits)" inputmode="numeric"><input id="rw" placeholder="Password (default parent123)"></div><h3>Vaccines already given (from existing card)</h3><div class="chips">${VACS.map(v=>`<label class="chip"><input type="checkbox" class="rg" value="${v}" style="padding:0"> ${v}</label>`).join('')}</div><br><button onclick="regChild()">Register</button></details>`}
+const regChild=()=>run(async()=>{const j=await api('/register-child',{childName:$('#rc').value.trim(),dob:$('#rd').value,area:$('#ra').value,parentName:$('#rp').value.trim(),mobile:$('#rm').value.trim(),password:$('#rw').value,given:[...document.querySelectorAll('.rg:checked')].map(x=>x.value)});alert(`✅ Registered ${j.childId} (worker: ${j.worker})\nParent login: ${j.mobile} / ${j.password||'(existing password)'}`);route()});
+
+// ---------- worker (with offline queue) ----------
+const Q=()=>JSON.parse(localStorage.vq_queue||'[]'),setQ=q=>localStorage.vq_queue=JSON.stringify(q);
+async function vWorker(){WD=await api('/worker');drawWorker()}
+function drawWorker(filter=''){const d=WD,tk=d.tasks,p=d.perf,q=Q();
+const list=d.children.filter(c=>(c.name+c.id).toLowerCase().includes(filter.toLowerCase()));
+app.innerHTML=shell(`<div class="card"><h2>${t('tasks')}: ${tk.total} <small>Completed ${tk.completed} · Pending ${tk.pending} · Missed ${d.missed.length}</small></h2>
+<span class="m">${navigator.onLine?'🟢 Online':'🔴 Offline — records will be saved locally'} · Queued: ${q.length}</span> <button class="sm sec" onclick="syncQ()">🔄 Sync now</button>
+${d.dueToday.map(x=>`<div class="row"><span>${esc(x.name)} → <b>${x.vaccine}</b></span><button class="sm" onclick="recVax('${x.childId}','${x.vaccine}')">💉 ${t('record')}</button></div>`).join('')||'<p class="m">No children due today 🎉</p>'}</div>
+<div class="card"><h2>🤖 Risk-based priority list</h2>${d.priority.map(x=>`<div class="row"><span>${x.level==='red'?'🔴':'🟡'} ${esc(x.name)} — ${x.vaccine} <small>${x.level==='red'?x.overdue+' days overdue':'due '+x.due}</small></span>
+${x.level==='red'?`<button class="sm sec" ${x.followed?'disabled':''} onclick="follow('${x.childId}','${x.vaccine}')">${x.followed?'Followed up':'📞 Follow-up'}</button>`:''}</div>`).join('')||'All on track'}</div>
+<div class="grid"><div class="stat"><b>${p.vaccinations}</b>Vaccinations</div><div class="stat"><b>${p.followups}</b>Follow-ups</div><div class="stat"><b>${p.accuracy}%</b>Data accuracy</div><div class="stat"><b>${p.points}</b>Points</div></div><br>
+<div class="card"><h2>🏅 Performance</h2>${p.badges.map(b=>`<span class="badge ${b.earned?'on':'off'}">${b.earned?'🏆':'🔒'} ${b.name}</span>`).join('')}
+<h3>Team board (private)</h3>${d.teams.map(x=>`<div class="row"><span>${x.mine?'⭐ ':''}${x.team}</span><b>${x.points}</b></div>`).join('')}</div>
+<div class="card"><h2>👶 Assigned children (${list.length})</h2><input placeholder="🔍 Search name / Child ID" value="${esc(filter)}" oninput="drawWorker(this.value);const e=$('input[placeholder^=\\'🔍\\']');e.focus();e.setSelectionRange(99,99)">
+${list.slice(0,40).map(c=>`<div class="row"><span>${c.risk==='green'?'🟢':c.risk==='yellow'?'🟡':'🔴'} <b>${esc(c.name)}</b> <small>${c.id} · ${c.progress}%</small></span>${c.pending.length?`<span><select id="s_${c.id}">${c.pending.map(v=>`<option>${v.name}</option>`).join('')}</select> <button class="sm" onclick="recVax('${c.id}',$('#s_${c.id}').value)">${t('record')}</button></span>`:'<span>✅ Complete</span>'}</div>`).join('')}</div>
+${regCard(d.user.area.split(','))}<div class="card"><h2>🏥 Centre inventory</h2><div class="chips">${Object.entries(d.inventory).map(([k,v])=>`<span class="chip ${v<30?'due_soon':''}">${k}: <b>${v}</b></span>`).join('')}</div></div>`)}
+function recVax(childId,vaccine){run(async()=>{const rec={childId,vaccine,date:new Date().toISOString().slice(0,10)};
+if(!navigator.onLine){setQ([...Q(),rec]);toast('📴 Saved offline — will sync automatically');return drawWorker()}
+try{await api('/worker/record',rec);toast('✅ Recorded '+vaccine)}catch(e){if(e instanceof TypeError){setQ([...Q(),rec]);toast('📴 Saved offline')}else throw e}vWorker()})}
+const follow=(childId,vaccine)=>run(async()=>{await api('/worker/followup',{childId,vaccine});toast('Follow-up logged (+points)');vWorker()});
+const syncQ=()=>run(async()=>{const q=Q();if(!q.length)return toast('Nothing to sync');const j=await api('/worker/sync',{records:q});setQ([]);toast(`Synced ${j.results.filter(r=>r.ok).length}/${q.length} records`);vWorker()});
+window.addEventListener('online',()=>{if(ME&&ME.role==='worker'&&Q().length)syncQ()});window.addEventListener('offline',()=>{if(ME&&ME.role==='worker')drawWorker()});
+
+// ---------- manager ----------
+async function vManager(){const d=await api('/manager'),o=d.overview;
+app.innerHTML=shell(`<div class="grid"><div class="stat"><b>${o.totalChildren}</b>Children</div><div class="stat"><b>${o.coverage}%</b>Coverage</div><div class="stat"><b>${o.ontime}%</b>On-time</div><div class="stat"><b>${o.missed}</b>Missed</div><div class="stat"><b style="color:var(--r)">${o.highRisk}</b>High-risk areas</div></div><br>
+<div class="card"><h2>📍 Coverage by area</h2>${d.areas.map(a=>`<div>${a.area} — <b>${a.cov}%</b> <small>on-time ${a.ontime}% · missed ${a.missed} · ${a.children} children</small><div class="bar"><i style="width:${a.cov}%;background:${a.cov<75?'var(--r)':a.cov<90?'var(--y)':'var(--g)'}"></i></div></div>`).join('')}</div>
+<div class="card"><h2>📈 Coverage trend (weekly)</h2><div class="col">${d.trend.map(x=>`<div style="height:${x.cov}%">${x.cov}%</div>`).join('')}</div><div class="col" style="height:auto">${d.trend.map(x=>`<div style="background:none;color:var(--m)">${x.label}</div>`).join('')}</div></div>
+${d.plans.map(p=>`<div class="card"><h2>🧭 Decision support: ${p.area}</h2><p style="color:var(--r)">${p.problem}</p><ul>${p.actions.map(a=>`<li>${a}</li>`).join('')}</ul></div>`).join('')}
+<div class="card"><h2>🔔 Notifications</h2>${d.notes.map(n=>`<div class="row">${esc(n)}</div>`).join('')}</div>
+<div class="card"><h2>🩺 Worker performance & resources</h2>${d.workers.map(w=>`<div class="row"><span>${esc(w.name)} <small>Area ${w.area}</small></span><span>${w.vaccinations} vaccines · ${w.accuracy}% accuracy · ${w.points} pts</span></div>`).join('')}
+<h3>Vaccine stock</h3><div class="chips">${Object.entries(d.inventory).map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join('')}</div></div>
+<button onclick="csv()">⬇ Download report (CSV)</button>`)}
+const csv=()=>run(async()=>{const r=await fetch('/api/manager/report.csv',{headers:{'x-token':TOKEN}}),b=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='coverage_report.csv';a.click()});
+
+// ---------- admin ----------
+async function vAdmin(){const d=await api('/admin');window._ad=d;
+app.innerHTML=shell(`<div id="eb"></div>${regCard(["A","B","C","D"])}<div class="card"><h2>➕ Create user (staff)</h2><div class="grid"><input id="nn" placeholder="Name"><input id="nm" placeholder="10-digit mobile"><input id="np" placeholder="Password"><select id="nr"><option value="parent">Parent</option><option value="worker">Worker</option><option value="manager">Manager</option><option value="admin">Admin</option></select><input id="na" placeholder="Area (optional)"></div><br><button onclick="addUser()">Create</button></div>
+<div class="card"><h2>🎁 Reward configuration (points)</h2><div class="grid">${Object.entries(d.config).map(([k,v])=>`<label class="m">${k}<input id="cf_${k}" type="number" min="0" value="${v}" style="width:100%"></label>`).join('')}</div><br><button onclick="saveCfg('${Object.keys(d.config).join(',')}')">Save</button></div>
+<div class="card"><h2>👥 Users (${d.users.length})</h2><div style="max-height:260px;overflow:auto"><table><tr><th>ID</th><th>Name</th><th>Role</th><th>Mobile</th><th>Area</th><th>Status</th><th></th></tr>${d.users.map(u=>`<tr><td>${u.id}</td><td>${esc(u.name)}</td><td>${u.role}</td><td>${u.mobile}</td><td>${esc(u.area)}</td><td>${u.active===false?'🔴 Off':'🟢 On'}</td><td style="white-space:nowrap"><button class="sm sec" onclick="editUser('${u.id}')">Edit</button> <button class="sm sec" onclick="toggleUser('${u.id}',${u.active===false})">${u.active===false?'Activate':'Deactivate'}</button> <button class="sm sec" onclick="delUser('${u.id}')">🗑</button></td></tr>`).join('')}</table></div></div>
+<div class="card"><h2>👶 Children</h2><input id="cs" placeholder="🔍 name / Child ID / parent mobile" oninput="drawKids()" style="width:100%"><div id="kl"></div></div><div class="card"><h2>🧾 Audit log</h2><div style="max-height:300px;overflow:auto"><table>${d.audit.map(a=>`<tr><td>${a.t.slice(0,19).replace('T',' ')}</td><td>${a.user} (${a.role})</td><td>${esc(a.action)}</td></tr>`).join('')}</table></div></div>`);drawKids()}
+const addUser=()=>run(async()=>{await api('/admin/user',{name:$('#nn').value,mobile:$('#nm').value,password:$('#np').value,role:$('#nr').value,area:$('#na').value});toast('User created');vAdmin()});
+const saveCfg=ks=>run(async()=>{const b={};ks.split(',').forEach(k=>b[k]=$('#cf_'+k).value);await api('/admin/config',b);toast('Saved');vAdmin()});
+
+function editUser(id){const u=_ad.users.find(x=>x.id===id),e=$('#eb');e.innerHTML=`<div class="card" style="border-color:var(--g)"><h2>✏️ Edit ${esc(u.name)} <small>${u.id}</small></h2><div class="grid"><label class="m">Name<input id="en" value="${esc(u.name)}" style="width:100%"></label><label class="m">Mobile<input id="em" value="${u.mobile}" style="width:100%"></label><label class="m">Role<select id="er" style="width:100%">${['parent','worker','manager','admin'].map(r=>`<option ${r===u.role?'selected':''}>${r}</option>`).join('')}</select></label><label class="m">Area<input id="ea" value="${esc(u.area)}" style="width:100%"></label><label class="m">New password (blank = keep)<input id="ep" style="width:100%"></label></div><br><button onclick="saveUser('${id}')">Save</button> <button class="sec" onclick="$('#eb').innerHTML=''">Cancel</button></div>`;e.scrollIntoView()}
+const saveUser=id=>run(async()=>{const j=await api('/admin/user/update',{id,name:$('#en').value.trim(),mobile:$('#em').value.trim(),role:$('#er').value,area:$('#ea').value.trim(),password:$('#ep').value});toast('✅ Saved'+(j.reassigned?` · ${j.reassigned} children reassigned`:''));vAdmin()});
+const toggleUser=(id,act)=>run(async()=>{await api('/admin/user/status',{id,active:act});toast('✅ Updated');vAdmin()});
+const delUser=id=>run(async()=>{if(!confirm('Delete this user permanently?'))return;await api('/admin/user/delete',{id});toast('🗑 User deleted');vAdmin()});
+const delChild=id=>run(async()=>{if(!confirm('Delete this child and all vaccination records permanently?'))return;await api('/admin/child/delete',{id});toast('🗑 Child deleted');vAdmin()});
+function drawKids(){const q=($('#cs').value||'').toLowerCase();$('#kl').innerHTML=_ad.children.filter(c=>(c.name+c.id+c.mobile).toLowerCase().includes(q)).slice(0,30).map(c=>`<div class="row"><span><b>${esc(c.name)}</b> <small>${c.id} · DOB ${c.dob} · Area ${c.area} · Worker ${c.worker} · 📱${c.mobile}</small></span><span><button class="sm sec" onclick="editChild('${c.id}')">Edit</button> <button class="sm sec" onclick="delChild('${c.id}')">🗑</button></span></div>`).join('')}
+const editChild=id=>run(async()=>{const c=_ad.children.find(x=>x.id===id),ws=_ad.users.filter(u=>u.role==='worker').map(u=>u.id).join('/'),name=prompt('Child name',c.name);if(name===null)return;const dob=prompt('Date of birth (YYYY-MM-DD)',c.dob);if(dob===null)return;const area=prompt('Area (A/B/C/D)',c.area);if(area===null)return;const worker=prompt('Worker ID ('+ws+')',c.worker);if(worker===null)return;await api('/admin/child/update',{id,name:name.trim(),dob:dob.trim(),area:area.trim().toUpperCase(),worker:worker.trim()});toast('✅ Child updated');vAdmin()});
+const editMe=()=>run(async()=>{const me=await api('/profile'),name=prompt('Name',me.name);if(name===null)return;const mobile=prompt('Mobile (10 digits)',me.mobile);if(mobile===null)return;let area=me.area;if(me.role==='parent'){area=prompt('Area (A/B/C/D)',me.area);if(area===null)return;area=area.trim();if(area!==me.area)area=area.toUpperCase()}const pw=prompt('Enter your current password to confirm');if(!pw)return;await api('/profile',{name:name.trim(),mobile:mobile.trim(),area,password:pw});ME.name=name.trim();toast('✅ Profile updated');route()});
+const chPw=()=>run(async()=>{const o=prompt('Current password');if(!o)return;const n=prompt('New password (min 6 characters)');if(!n)return;await api('/password',{oldPassword:o,newPassword:n});toast('✅ Password changed')});
+
+(async()=>{if(TOKEN){try{ME=await api('/me');route()}catch{login()}}else login()})();
+</script></body></html>
